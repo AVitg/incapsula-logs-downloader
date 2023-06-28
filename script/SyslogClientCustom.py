@@ -29,13 +29,14 @@ class SyslogClientCustom(SyslogClient):
         self.log_hostname=log_hostname
         self.logger.debug("CUSTOM Syslog enabled. Log Hostname: {}".format(log_hostname))
 
-    def message_customize(self,msg):
+
+    def message_customize(self,msg, logfilename):
         if msg != '':            
             msg = msg.replace("Customer=", "flexString1=") # no Customer field in CEF, better to fs1
             msg = msg.replace("cn1=", "flexString2=")
             msg = msg.replace("deviceExternalId=", "cn1=")
-            msg = msg.replace("xff=", "cs99=") # yep, there is no cs>6, but it had to go somewhere, and get labes, suggestions welcome
-            msg = msg.replace("cs4=", "cs98=") # moving VID 
+            msg = msg.replace("xff=", "cs99=") # yep, there is no cs>6, but it had to go somewhere, and get labels, suggestions welcome
+            msg = msg.replace("cs4=", "cs98=") # moving VID
             msg = msg.replace("cs3=", "cs4=") # CO Support to cs4, to match on-prem imperva logs
             msg = msg.replace("sourceServiceName=", "cs3=") # to match on-prem imperva logs
             msg = msg.replace("cs3Label=CO Support", "cs3Label=ServiceName") # cause of moving things around... names needed changes
@@ -50,11 +51,15 @@ class SyslogClientCustom(SyslogClient):
             msg = msg.replace("cs6=", "deviceProcessName=")  #to make it CEF compliant
             msg = msg.replace("cs5=", "fname=") # to make it CEF compliant
             msg = msg.replace("qstr=", "cs5=") # to make it CEF compliant
-            msg = msg.replace("ver=", "cs6=")  # to make it CEF compliant           
+            msg = msg.replace("ver=", "cs96=")  # # yep, there is no cs>6, but it had to go somewhere, and get labels, suggestions welcome
+            msg = msg.replace("postbody=", "cs6=") # to make it CEF compliant
+            msg += " oldFileName="
+            msg += logfilename
             msg += " flexString1Label=Customer"
             msg += " flexString2Label=ResponseCode"
             msg += " cs5Label=requestQuery(qstr) "
-            msg += " cs6Label=TLS(ver) "
+            msg += " cs6Label=postbody "
+            msg += " cs96Label=TLS(ver) "
             msg += " cn1Label=EventId "
             msg += " cs97Label=siteTag "
             msg += " cs98Label=VID "
@@ -62,7 +67,7 @@ class SyslogClientCustom(SyslogClient):
         return msg
 
     # Send the messages
-    def send(self, data):
+    def send(self, data, logfilename):
         """
         Send syslog packet to given host and port.
         """
@@ -81,7 +86,7 @@ class SyslogClientCustom(SyslogClient):
                     hostname = self.log_hostname
                 timestamp = self.get_time(message)
                 application = "cwaf"                
-                customized_message=self.message_customize(message)                                   
+                customized_message=self.message_customize(message,logfilename)                                   
                 msg = "{} {} {} {} {}\n".format(priority, timestamp, hostname, application, customized_message)
                 messages += msg
             try:
@@ -105,7 +110,7 @@ class SyslogClientCustom(SyslogClient):
                     hostname = self.log_hostname
                 timestamp = self.get_time(message)
                 application = "cwaf"
-                customized_message=self.message_customize(message)                                  
+                customized_message=self.message_customize(message,logfilename)                                  
                 msg = "{} {} {} {} {}\n".format(priority, timestamp, hostname, application, customized_message)
                 try:
                     sock.sendto(bytes(msg, 'utf-8'), (self.host, int(self.port)))
@@ -144,4 +149,3 @@ class SyslogClientCustom(SyslogClient):
         except IndexError:
             self.logger.error("Error getting hostname.")
         return hostname
-
