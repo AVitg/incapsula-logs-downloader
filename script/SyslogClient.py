@@ -31,7 +31,7 @@ class SyslogClient:
         self.logger.debug("Send to Host={} on Port={}".format(self.host, self.port))
 
     # Send the messages
-    def send(self, data, logfilename):
+    def send(self, data, filename):
         """
         Send syslog packet to given host and port.
         """

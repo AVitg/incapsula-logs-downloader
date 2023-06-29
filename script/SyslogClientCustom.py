@@ -1,6 +1,7 @@
 import datetime
 import socket
 from SyslogClient import SyslogClient
+from time import time
 
 FACILITY = {
     'kern': 0, 'user': 1, 'mail': 2, 'daemon': 3,
@@ -24,11 +25,32 @@ Syslog - For sending TCP Syslog messages via socket class
 
 # Create a raw socket client to send messages to syslog server
 class SyslogClientCustom(SyslogClient):
-    def __init__(self, host, port, socket_type, logger, log_hostname="imperva.com"):        
+    def __init__(self, host, port, socket_type, logger, log_hostname="imperva.com"):
         SyslogClient.__init__(self, host, port, socket_type, logger)
         self.log_hostname=log_hostname
         self.logger.debug("CUSTOM Syslog enabled. Log Hostname: {}".format(log_hostname))
 
+    ''' 
+        found actually a log, where the syslog timestamp was "1 Jan", check of end time revealed its "0"
+        hence adding this fix, end time is not allowed to be 0 in ESM, and also does not really make sense, as you might sort by end time
+        however the event I found it in, was a DDoS event, where the attack is still ongoing... hence end=0 kindof is true, however not complient to ESM/CEF an
+    '''
+            
+    def get_time_from_message_epoch(self, message, time="end="):
+        if message.startswith("CEF"):
+            epoch = int(str(message.split(time)[1]).split(" ")[0])
+        elif message.startswith("LEEF"):
+            epoch = int(str(message.split(time)[1]).split("\t")[0])
+        else:
+            epoch=int(time())
+        return(epoch)
+        
+    def correct_end_time(self,message):
+        starttime = self.get_time_from_message_epoch(message,"start=")
+        newtime="end={}".format(starttime)
+        self.logger.debug("end time=0 time correcting to newtime: {}".format(newtime))
+        return(message.replace("end=0", str(newtime)))
+        
 
     def message_customize(self,msg, logfilename):
         if msg != '':            
@@ -63,7 +85,7 @@ class SyslogClientCustom(SyslogClient):
             msg += " cn1Label=EventId "
             msg += " cs97Label=siteTag "
             msg += " cs98Label=VID "
-            msg += " cs99Label=Xff "                                
+            msg += " cs99Label=Xff "
         return msg
 
     # Send the messages
@@ -86,7 +108,7 @@ class SyslogClientCustom(SyslogClient):
                     hostname = self.log_hostname
                 timestamp = self.get_time(message)
                 application = "cwaf"                
-                customized_message=self.message_customize(message,logfilename)                                   
+                customized_message=self.message_customize(message,logfilename)
                 msg = "{} {} {} {} {}\n".format(priority, timestamp, hostname, application, customized_message)
                 messages += msg
             try:
@@ -110,7 +132,9 @@ class SyslogClientCustom(SyslogClient):
                     hostname = self.log_hostname
                 timestamp = self.get_time(message)
                 application = "cwaf"
-                customized_message=self.message_customize(message,logfilename)                                  
+                customized_message=self.message_customize(message,logfilename)                
+                if "end=0" in customized_message:
+                    customized_message=self.correct_end_time(customized_message)
                 msg = "{} {} {} {} {}\n".format(priority, timestamp, hostname, application, customized_message)
                 try:
                     sock.sendto(bytes(msg, 'utf-8'), (self.host, int(self.port)))
@@ -123,17 +147,26 @@ class SyslogClientCustom(SyslogClient):
             return True
     
     # Function used to get the inbound timestamp to set the indexed time in epoch
+        
     def get_time(self, message):
-        timestamp = datetime.datetime.now().strftime("%b %d %H:%M:%S")
+        tformat="%Y-%m-%dT%H:%M:%S.00Z"
+        timestamp = datetime.datetime.now().strftime(tformat)
         try:
             if message.startswith("CEF"):
                 epoch = int(str(message.split("end=")[1]).split(" ")[0]) / 1000
-                timestamp = datetime.datetime.fromtimestamp(int(epoch)).strftime("%b %d %H:%M:%S") or \
-                            datetime.datetime.now().strftime("%b %d %H:%M:%S")
+                # found actually a log, where the syslog timestamp was "1 Jan", check of end time revealed its "0"
+                # hence adding this fix
+                if epoch == 0:
+                    epoch = int(str(message.split("start=")[1]).split(" ")[0]) / 1000
+                timestamp = datetime.datetime.fromtimestamp(int(epoch)).strftime(tformat) or \
+                            datetime.datetime.now().strftime(tformat)
             elif message.startswith("LEEF"):
                 epoch = int(str(message.split("end=")[1]).split("\t")[0]) / 1000
-                timestamp = datetime.datetime.fromtimestamp(int(epoch)).strftime("%b %d %H:%M:%S") or \
-                            datetime.datetime.now().strftime("%b %d %H:%M:%S")
+                # see above
+                if epoch == 0:
+                    epoch = int(str(message.split("start=")[1]).split("\t")[0]) / 1000
+                timestamp = datetime.datetime.fromtimestamp(int(epoch)).strftime(tformat) or \
+                            datetime.datetime.now().strftime(tformat)
         except IndexError:
             self.logger.error("Error converting epoch time.")
         return timestamp
@@ -149,3 +182,6 @@ class SyslogClientCustom(SyslogClient):
         except IndexError:
             self.logger.error("Error getting hostname.")
         return hostname
+
+
+
