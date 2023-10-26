@@ -1,6 +1,7 @@
 import datetime
 import socket
 from SyslogClient import SyslogClient
+from time import sleep
 
 FACILITY = {
     'kern': 0, 'user': 1, 'mail': 2, 'daemon': 3,
@@ -95,6 +96,7 @@ class SyslogClientCustom(SyslogClient):
             finally:
                 sock.close()
         elif self.socket_type == socket.SOCK_DGRAM:
+            count=0
             for message in data:
                 if "|Normal|" in message: # only send alerts to syslog, otherwise skip
                     continue
@@ -111,6 +113,9 @@ class SyslogClientCustom(SyslogClient):
                     sock.sendto(bytes(msg, 'utf-8'), (self.host, int(self.port)))
                 except socket.error as e:
                     self.logger.error(e)
+                count=count+1
+                if count % 100 == 0:
+                    sleep(0.3)   
                 #    return None
                 # finally:
                 #     sock.close()
